@@ -1,5 +1,7 @@
 node_modules
 
+admsdk.json
+
 # Output
 .output
 .vercel
