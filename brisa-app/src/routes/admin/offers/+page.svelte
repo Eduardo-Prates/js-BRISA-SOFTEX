@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
+  import { getOffers, addOffer, updateOffer, deleteOffer, getHotspots } from '$lib/firebaseFetch';
   
-  // Store for offers and hotspots
   let offers = [];
   let hotspots = [];
   let title = '';
@@ -9,73 +9,98 @@
   let imageUrl = '';
   let hotspotId = '';
   let editingId = null;
+  let loading = true;
+  let error = '';
   
-  onMount(() => {
-    // Load data from localStorage for demo purposes
-    const storedOffers = localStorage.getItem('offers');
-    if (storedOffers) {
-      offers = JSON.parse(storedOffers);
-    }
-    
-    const storedHotspots = localStorage.getItem('hotspots');
-    if (storedHotspots) {
-      hotspots = JSON.parse(storedHotspots);
+  onMount(async () => {
+    try {
+      // Carrega hotspots e ofertas em paralelo
+      const [hotspotsData, offersData] = await Promise.all([
+        getHotspots(),
+        getOffers()
+      ]);
+      
+      hotspots = hotspotsData;
+      offers = offersData;
+      loading = false;
+    } catch (err) {
+      console.error('Erro ao carregar dados:', err);
+      error = 'Erro ao carregar dados. Tente recarregar a página.';
+      loading = false;
     }
   });
   
-  function saveOffers() {
-    localStorage.setItem('offers', JSON.stringify(offers));
-  }
-  
-  function addOffer() {
+  async function handleAddOffer() {
     if (!title.trim() || !hotspotId) return;
     
-    if (editingId !== null) {
-      // Update existing offer
-      const index = offers.findIndex(o => o.id === editingId);
-      if (index !== -1) {
-        offers[index] = { 
-          id: editingId, 
+    try {
+      if (editingId !== null) {
+        // Update existing offer
+        await updateOffer(editingId, { 
           title, 
           description, 
           imageUrl, 
-          hotspotId: parseInt(hotspotId) 
+          hotspotId
+        });
+        
+        // Atualiza a lista local
+        const index = offers.findIndex(o => o.id === editingId);
+        if (index !== -1) {
+          offers[index] = { 
+            ...offers[index], 
+            title, 
+            description, 
+            imageUrl, 
+            hotspotId
+          };
+          offers = [...offers];
+        }
+        
+        editingId = null;
+      } else {
+        // Add new offer
+        const newOffer = {
+          title,
+          description,
+          imageUrl,
+          hotspotId
         };
-        offers = [...offers];
+        
+        const docRef = await addOffer(newOffer);
+        
+        // Adiciona à lista local com o ID gerado pelo Firestore
+        offers = [...offers, { id: docRef.id, ...newOffer }];
       }
-      editingId = null;
-    } else {
-      // Add new offer
-      const newOffer = {
-        id: Date.now(),
-        title,
-        description,
-        imageUrl,
-        hotspotId: parseInt(hotspotId)
-      };
-      offers = [...offers, newOffer];
+      
+      // Reset form
+      title = '';
+      description = '';
+      imageUrl = '';
+      hotspotId = '';
+    } catch (err) {
+      console.error('Erro ao salvar oferta:', err);
+      error = 'Ocorreu um erro ao salvar a oferta. Tente novamente.';
     }
-    
-    // Reset form
-    title = '';
-    description = '';
-    imageUrl = '';
-    hotspotId = '';
-    
-    saveOffers();
   }
   
   function editOffer(offer) {
     title = offer.title;
-    description = offer.description;
-    imageUrl = offer.imageUrl;
-    hotspotId = offer.hotspotId.toString();
+    description = offer.description || '';
+    imageUrl = offer.imageUrl || '';
+    hotspotId = offer.hotspotId;
     editingId = offer.id;
   }
   
-  function deleteOffer(id) {
-    offers = offers.filter(o => o.id !== id);
-    saveOffers();
+  async function handleDeleteOffer(id) {
+    if (confirm('Tem certeza que deseja excluir esta oferta?')) {
+      try {
+        await deleteOffer(id);
+        offers = offers.filter(o => o.id !== id);
+      } catch (err) {
+        console.error('Erro ao excluir oferta:', err);
+        error = 'Ocorreu um erro ao excluir a oferta. Tente novamente.';
+      }
+    }
   }
   
   function getHotspotName(id) {
@@ -87,10 +112,16 @@
 <div>
   <h1 class="text-2xl font-bold mb-6">Gerenciar Ofertas</h1>
   
+  {#if error}
+    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+      {error}
+    </div>
+  {/if}
+  
   <div class="bg-white p-6 rounded-lg shadow-md mb-8">
     <h2 class="text-xl font-semibold mb-4">{editingId !== null ? 'Editar' : 'Adicionar'} Oferta</h2>
     
-    <form on:submit|preventDefault={addOffer} class="space-y-4">
+    <form on:submit|preventDefault={handleAddOffer} class="space-y-4">
       <div>
         <label for="title" class="block text-sm font-medium text-gray-700 mb-1">Título</label>
         <input 
@@ -152,7 +183,7 @@
         {/if}
         <button 
           type="submit" 
-          class="px-4 py-2 bg-gray-200 text-black rounded hover:bg-primary/90"
+          class="px-4 py-2 bg-blue-100 text-black rounded hover:bg-blue-200 transition-colors"
           disabled={hotspots.length === 0}
         >
           {editingId !== null ? 'Atualizar' : 'Adicionar'} Oferta
@@ -170,7 +201,12 @@
   <div class="bg-white rounded-lg shadow-md">
     <h2 class="text-xl font-semibold p-6 border-b">Lista de Ofertas</h2>
     
-    {#if offers.length === 0}
+    {#if loading}
+      <div class="p-6 text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <p class="mt-2 text-gray-500">Carregando ofertas...</p>
+      </div>
+    {:else if offers.length === 0}
       <div class="p-6 text-center text-gray-500">
         Nenhuma oferta adicionada ainda. Adicione sua primeira oferta acima.
       </div>
@@ -204,7 +240,7 @@
                     Editar
                   </button>
                   <button 
-                    on:click={() => deleteOffer(offer.id)}
+                    on:click={() => handleDeleteOffer(offer.id)}
                     class="text-red-600 hover:text-red-900"
                   >
                     Excluir
