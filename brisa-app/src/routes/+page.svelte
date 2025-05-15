@@ -1,25 +1,35 @@
 <script>
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { getUserByCPF } from '$lib/firebaseFetch';
   
   let cpf = '';
   let error = '';
   let loading = false;
-  
-  // Lista de administradores (em um sistema real, isso estaria em um banco de dados)
-  const adminCPFs = ['12345678900', '00987654321'];
+  let isCheckingAuth = true; // Flag para controlar a verificação inicial
   
   onMount(() => {
+    // Limpar qualquer localStorage antigo para evitar conflitos
+    localStorage.removeItem('currentUser');
+    
     // Verificar se já existe um usuário logado
-    const currentUser = localStorage.getItem('currentUser');
+    const currentUser = sessionStorage.getItem('currentUser');
     if (currentUser) {
-      const userData = JSON.parse(currentUser);
-      if (userData.isAdmin) {
-        goto('/admin/hotspots');
-      } else {
-        goto('/client');
+      try {
+        const userData = JSON.parse(currentUser);
+        if (userData.isAdmin) {
+          goto('/admin/hotspots');
+        } else {
+          goto('/client');
+        }
+      } catch (error) {
+        console.error("Erro ao processar dados do usuário:", error);
+        sessionStorage.removeItem('currentUser');
       }
     }
+    
+    // Marcar que a verificação inicial foi concluída
+    isCheckingAuth = false;
   });
   
   function formatCPF(value) {
@@ -63,7 +73,7 @@
     return true;
   }
   
-  function handleSubmit() {
+  async function handleSubmit() {
     error = '';
     
     // Remove formatação para processar
@@ -76,67 +86,80 @@
     
     loading = true;
     
-    // Simula uma verificação no servidor
-    setTimeout(() => {
-      const isAdmin = adminCPFs.includes(numericCPF);
+    try {
+      // Verifica se o CPF é de um administrador
+      const userData = await getUserByCPF(numericCPF);
       
-      // Salva os dados do usuário
-      localStorage.setItem('currentUser', JSON.stringify({
+      // Limpar qualquer localStorage antigo para evitar conflitos
+      localStorage.removeItem('currentUser');
+      
+      // Salva os dados do usuário na sessão
+      sessionStorage.setItem('currentUser', JSON.stringify({
         cpf: numericCPF,
-        isAdmin,
+        isAdmin: userData.isAdmin,
         loginTime: new Date().toISOString()
       }));
       
       // Redireciona para a interface apropriada
-      if (isAdmin) {
+      if (userData.isAdmin) {
         goto('/admin/hotspots');
       } else {
         goto('/client');
       }
-      
+    } catch (error) {
+      console.error('Erro ao fazer login:', error);
+      this.error = 'Ocorreu um erro ao fazer login. Tente novamente.';
+    } finally {
       loading = false;
-    }, 1000);
+    }
   }
 </script>
 
-<div class="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
-  <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-    <h1 class="text-3xl font-bold text-center mb-8 text-primary">Supermercado Ofertas</h1>
-    
-    <form on:submit|preventDefault={handleSubmit} class="space-y-6">
-      <div>
-        <label for="cpf" class="block text-sm font-medium text-gray-700 mb-1">CPF</label>
-        <input 
-          id="cpf"
-          type="text" 
-          bind:value={cpf}
-          on:input={handleInput}
-          placeholder="000.000.000-00"
-          maxlength="14"
-          class="w-full p-3 border rounded-lg focus:ring focus:ring-primary/30 focus:border-primary focus:outline-none"
-          required
-        />
-        {#if error}
-          <p class="mt-1 text-sm text-red-600">{error}</p>
-        {/if}
-        <p class="mt-2 text-xs text-gray-500">
-          Para fins de demonstração, os CPFs de administrador são: 123.456.789-00 ou 009.876.543-21
-        </p>
-      </div>
-      
-      <button 
-        type="submit" 
-        class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center"
-        disabled={loading}
-      >
-        {#if loading}
-          <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        {/if}
-        Entrar
-      </button>
-    </form>
+<!-- Só mostra o formulário quando a verificação inicial estiver concluída -->
+{#if isCheckingAuth}
+  <div class="min-h-screen flex items-center justify-center bg-gray-100">
+    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
   </div>
-</div>
+{:else}
+  <div class="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
+    <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+      <h1 class="text-3xl font-bold text-center mb-8 text-primary">Supermercado Ofertas</h1>
+      
+      <form on:submit|preventDefault={handleSubmit} class="space-y-6">
+        <div>
+          <label for="cpf" class="block text-sm font-medium text-gray-700 mb-1">CPF</label>
+          <input 
+            id="cpf"
+            type="text" 
+            bind:value={cpf}
+            on:input={handleInput}
+            placeholder="000.000.000-00"
+            maxlength="14"
+            class="w-full p-3 border rounded-lg focus:ring focus:ring-primary/30 focus:border-primary focus:outline-none"
+            required
+          />
+          {#if error}
+            <p class="mt-1 text-sm text-red-600">{error}</p>
+          {/if}
+          <p class="mt-2 text-xs text-gray-500">
+            Para fins de demonstração, use os CPFs de administrador: 123.456.789-00 ou 009.876.543-21
+          </p>
+        </div>
+        
+        <button 
+          type="submit" 
+          class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center"
+          disabled={loading}
+        >
+          {#if loading}
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          {/if}
+          Entrar
+        </button>
+      </form>
+    </div>
+  </div>
+{/if}
