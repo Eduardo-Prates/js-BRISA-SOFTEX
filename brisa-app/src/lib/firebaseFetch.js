@@ -153,6 +153,56 @@ export async function getCarrinhoById(id) {
   };
 }
 
+// Adicione estas funções no seu arquivo firebaseFetch.js
+
+// ===== LISTENERS EM TEMPO REAL =====
+export function listenToCarrinhoById(id, callback) {
+  const carrinhoRef = doc(db, 'carrinhos', id);
+  return onSnapshot(carrinhoRef, (doc) => {
+    if (doc.exists()) {
+      callback({
+        id: doc.id,
+        ...doc.data()
+      });
+    } else {
+      callback(null);
+    }
+  }, (error) => {
+    console.error("Erro ao escutar carrinho:", error);
+    callback(null, error);
+  });
+}
+
+// Listener para ofertas (caso você queira escutar mudanças nas ofertas também)
+export function listenToOffers(callback) {
+  const offersCol = collection(db, 'ofertas');
+  return onSnapshot(offersCol, (snapshot) => {
+    const offers = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    callback(offers);
+  }, (error) => {
+    console.error("Erro ao escutar ofertas:", error);
+    callback([], error);
+  });
+}
+
+// Listener para hotspots (caso você queira escutar mudanças nos hotspots também)
+export function listenToHotspots(callback) {
+  const hotspotsCol = collection(db, 'hotspots');
+  return onSnapshot(hotspotsCol, (snapshot) => {
+    const hotspots = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    callback(hotspots);
+  }, (error) => {
+    console.error("Erro ao escutar hotspots:", error);
+    callback([], error);
+  });
+}
+
 export async function updateCarrinhoPosition(id, position) {
   const carrinhoRef = doc(db, 'carrinhos', id);
   return await updateDoc(carrinhoRef, {
@@ -172,6 +222,21 @@ export function listenToCarrinhoPosition(id, callback) {
       });
     }
   });
+}
+
+export async function getCarrinhoByName(nomeCarrinho) {
+  const carrinhosCol = collection(db, 'carrinhos');
+  const q = query(carrinhosCol, where("nome", "==", nomeCarrinho));
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty) {
+    return null;
+  }
+  
+  return {
+    id: snapshot.docs[0].id,
+    ...snapshot.docs[0].data()
+  };
 }
 
 // ===== SUPERMERCADOS =====
