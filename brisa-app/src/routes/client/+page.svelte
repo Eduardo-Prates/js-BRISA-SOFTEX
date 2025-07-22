@@ -1,16 +1,33 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { getHotspots, getOffers } from '$lib/firebaseFetch';
+  import { 
+    getHotspots, 
+    getOffers, 
+    getCarrinhoById, 
+    listenToCarrinhoById,
+    listenToOffers,
+    listenToHotspots
+  } from '$lib/firebaseFetch';
   
   let offers = [];
   let hotspots = [];
   let currentOffers = [];
-  let cartPosition = { x: 50, y: 50 }; // Posição inicial
-  let updateInterval;
+  let currentHotspot = null;
+  let carrinho = null;
   let userName = "Cliente";
   let loading = true;
   let error = '';
+  let carrinhoId = 'carrinho001';
+  
+  // Variáveis para controlar os listeners
+  let unsubscribeCarrinho;
+  let unsubscribeOffers;
+  let unsubscribeHotspots;
+  
+  // Opção para usar polling em vez de listeners (defina como true se preferir polling)
+  let usePolling = false;
+  let pollingInterval;
   
   onMount(async () => {
     // Verificar se o usuário está logado
@@ -29,20 +46,15 @@
     }
     
     try {
-      // Carrega hotspots e ofertas do Firebase
-      const [hotspotsData, offersData] = await Promise.all([
-        getHotspots(),
-        getOffers()
-      ]);
-      
-      hotspots = hotspotsData;
-      offers = offersData;
-      
-      // Inicia a simulação de movimento
-      startPositionUpdates();
-      
-      // Atualiza ofertas com base na posição inicial
-      updateCurrentOffers();
+      if (usePolling) {
+        // Opção 1: Usar polling a cada 3 segundos
+        await loadInitialData();
+        startPolling();
+      } else {
+        // Opção 2: Usar listeners em tempo real (RECOMENDADO)
+        await loadInitialData();
+        startRealtimeListeners();
+      }
       
       loading = false;
     } catch (err) {
@@ -53,68 +65,161 @@
   });
   
   onDestroy(() => {
-    // Limpa o intervalo quando o componente é destruído
-    if (updateInterval) {
-      clearInterval(updateInterval);
-    }
+    // Limpa todos os listeners e intervalos
+    if (unsubscribeCarrinho) unsubscribeCarrinho();
+    if (unsubscribeOffers) unsubscribeOffers();
+    if (unsubscribeHotspots) unsubscribeHotspots();
+    if (pollingInterval) clearInterval(pollingInterval);
   });
   
-  function logout() {
-    if (updateInterval) {
-      clearInterval(updateInterval);
+  async function loadInitialData() {
+    // Carrega dados iniciais
+    const [hotspotsData, offersData, carrinhoData] = await Promise.all([
+      getHotspots(),
+      getOffers(),
+      getCarrinhoById(carrinhoId)
+    ]);
+    
+    hotspots = hotspotsData;
+    offers = offersData;
+    carrinho = carrinhoData;
+    
+    if (!carrinho) {
+      error = `Carrinho ${carrinhoId} não encontrado.`;
+      return;
     }
+    
+    updateCurrentOffers();
+  }
+  
+  function startRealtimeListeners() {
+    // Listener para o carrinho (PRINCIPAL - detecta mudanças na localização)
+    unsubscribeCarrinho = listenToCarrinhoById(carrinhoId, (carrinhoData, err) => {
+      if (err) {
+        console.error('Erro no listener do carrinho:', err);
+        error = 'Erro ao monitorar carrinho. Tentando reconectar...';
+        return;
+      }
+      
+      if (carrinhoData) {
+        const oldLocation = carrinho?.localizacaoAtual;
+        carrinho = carrinhoData;
+        
+        // Só atualiza se a localização mudou
+        if (oldLocation !== carrinho.localizacaoAtual) {
+          console.log('Localização do carrinho atualizada:', carrinho.localizacaoAtual);
+          updateCurrentOffers();
+        }
+      } else {
+        error = `Carrinho ${carrinhoId} não encontrado.`;
+      }
+    });
+    
+    // Listener para ofertas (detecta quando ofertas são adicionadas/removidas/editadas)
+    unsubscribeOffers = listenToOffers((offersData, err) => {
+      if (err) {
+        console.error('Erro no listener de ofertas:', err);
+        return;
+      }
+      
+      offers = offersData;
+      updateCurrentOffers();
+      console.log('Ofertas atualizadas em tempo real');
+    });
+    
+    // Listener para hotspots (detecta quando hotspots são editados)
+    unsubscribeHotspots = listenToHotspots((hotspotsData, err) => {
+      if (err) {
+        console.error('Erro no listener de hotspots:', err);
+        return;
+      }
+      
+      hotspots = hotspotsData;
+      updateCurrentOffers();
+      console.log('Hotspots atualizados em tempo real');
+    });
+  }
+  
+  function startPolling() {
+    // Alternativa: Polling a cada 3 segundos
+    pollingInterval = setInterval(async () => {
+      try {
+        const carrinhoData = await getCarrinhoById(carrinhoId);
+        
+        if (carrinhoData && carrinhoData.localizacaoAtual !== carrinho?.localizacaoAtual) {
+          console.log('Localização atualizada via polling:', carrinhoData.localizacaoAtual);
+          carrinho = carrinhoData;
+          updateCurrentOffers();
+        }
+      } catch (err) {
+        console.error('Erro no polling:', err);
+      }
+    }, 3000); // 3 segundos
+  }
+  
+  function logout() {
+    // Limpa listeners antes de sair
+    if (unsubscribeCarrinho) unsubscribeCarrinho();
+    if (unsubscribeOffers) unsubscribeOffers();
+    if (unsubscribeHotspots) unsubscribeHotspots();
+    if (pollingInterval) clearInterval(pollingInterval);
+    
     sessionStorage.removeItem('currentUser');
     goto('/');
   }
   
-  function startPositionUpdates() {
-    // Simula o movimento do carrinho a cada 5 segundos
-    updateInterval = setInterval(() => {
-      // Movimento aleatório
-      cartPosition = {
-        x: Math.max(0, Math.min(100, cartPosition.x + (Math.random() - 0.5) * 10)),
-        y: Math.max(0, Math.min(100, cartPosition.y + (Math.random() - 0.5) * 10))
-      };
-      
-      updateCurrentOffers();
-    }, 5000);
-  }
-  
   function updateCurrentOffers() {
-    // Encontra o hotspot mais próximo
-    let nearestHotspot = null;
-    let minDistance = Infinity;
+    if (!carrinho || !carrinho.localizacaoAtual) {
+      currentOffers = [];
+      currentHotspot = null;
+      return;
+    }
     
-    hotspots.forEach(hotspot => {
-      const distance = Math.sqrt(
-        Math.pow(hotspot.x - cartPosition.x, 2) + 
-        Math.pow(hotspot.y - cartPosition.y, 2)
-      );
-      
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearestHotspot = hotspot;
-      }
-    });
+    // Encontra o hotspot onde o carrinho está localizado
+    const hotspot = hotspots.find(h => h.id === carrinho.localizacaoAtual);
     
-    // Se estiver próximo o suficiente de um hotspot (dentro de 20 unidades), mostra suas ofertas
-    if (nearestHotspot && minDistance < 20) {
-      // Filtra as ofertas pelo ID do hotspot
-      currentOffers = offers.filter(offer => offer.hotspotId === nearestHotspot.id);
+    if (hotspot) {
+      currentHotspot = hotspot;
+      // Filtra as ofertas pelo ID do hotspot atual
+      currentOffers = offers.filter(offer => offer.hotspotId === hotspot.id);
     } else {
+      currentHotspot = null;
       currentOffers = [];
     }
   }
   
-  // Função para atualizar manualmente a posição (botão de atualização)
-  function manualUpdate() {
-    // Movimento aleatório
-    cartPosition = {
-      x: Math.max(0, Math.min(100, cartPosition.x + (Math.random() - 0.5) * 10)),
-      y: Math.max(0, Math.min(100, cartPosition.y + (Math.random() - 0.5) * 10))
-    };
+  // Função para alternar entre polling e listeners em tempo real
+  function toggleUpdateMode() {
+    // Limpa listeners/polling atuais
+    if (unsubscribeCarrinho) unsubscribeCarrinho();
+    if (unsubscribeOffers) unsubscribeOffers();
+    if (unsubscribeHotspots) unsubscribeHotspots();
+    if (pollingInterval) clearInterval(pollingInterval);
     
-    updateCurrentOffers();
+    // Alterna o modo
+    usePolling = !usePolling;
+    
+    // Reinicia com o novo modo
+    if (usePolling) {
+      startPolling();
+    } else {
+      startRealtimeListeners();
+    }
+  }
+  
+  // Função para recarregar manualmente
+  async function manualReload() {
+    loading = true;
+    error = '';
+    
+    try {
+      await loadInitialData();
+      loading = false;
+    } catch (err) {
+      console.error('Erro ao recarregar:', err);
+      error = 'Erro ao recarregar dados. Tente novamente.';
+      loading = false;
+    }
   }
 </script>
 
@@ -123,7 +228,18 @@
     <h1 class="text-2xl font-bold text-primary">Ofertas Especiais</h1>
     <div class="flex items-center gap-4">
       <div class="text-sm text-gray-500">
-        Posição do carrinho: X: {cartPosition.x.toFixed(1)}, Y: {cartPosition.y.toFixed(1)}
+        {#if carrinho && currentHotspot}
+          📍 {currentHotspot.name}
+        {:else if carrinho}
+          📍 {carrinho.localizacaoAtual || 'Não definida'}
+        {:else}
+          📍 Carregando...
+        {/if}
+        
+        <!-- Indicador do modo de atualização -->
+        <span class="ml-2 px-2 py-1 text-xs rounded {usePolling ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}">
+          {usePolling ? '🔄 Polling 3s' : '⚡ Tempo Real'}
+        </span>
       </div>
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium">{userName}</span>
@@ -152,9 +268,22 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {#if currentOffers.length === 0}
         <div class="col-span-full bg-white p-8 rounded-lg shadow-md text-center">
-          <p class="text-xl text-gray-500">Mova seu carrinho para descobrir ofertas especiais!</p>
+          {#if currentHotspot}
+            <p class="text-xl text-gray-500">Nenhuma oferta disponível para {currentHotspot.name} no momento.</p>
+          {:else if carrinho && carrinho.localizacaoAtual}
+            <p class="text-xl text-gray-500">Hotspot não encontrado para a localização atual: {carrinho.localizacaoAtual}</p>
+          {:else}
+            <p class="text-xl text-gray-500">Localização do carrinho não definida.</p>
+          {/if}
         </div>
       {:else}
+        <div class="col-span-full mb-4">
+          <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded">
+            <p class="font-semibold">📍 Ofertas disponíveis em: {currentHotspot.name}</p>
+            <p class="text-sm">Total de ofertas: {currentOffers.length} | Frequência: {currentHotspot.frequency || 'Não informada'}</p>
+          </div>
+        </div>
+        
         {#each currentOffers as offer}
           <div class="bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
             {#if offer.imageUrl}
@@ -180,14 +309,29 @@
     </div>
   {/if}
   
-  <div class="fixed bottom-4 right-4">
-    <div class="bg-white p-4 rounded-full shadow-lg">
+  <!-- Botões de controle -->
+  <div class="fixed bottom-4 right-4 flex flex-col gap-2">
+    <!-- Botão para alternar modo de atualização -->
+    <div class="bg-white p-2 rounded-full shadow-lg">
       <button 
-        on:click={manualUpdate}
-        class="bg-primary text-white w-12 h-12 rounded-full flex items-center justify-center"
-        aria-label="Atualizar posição"
+        on:click={toggleUpdateMode}
+        class="bg-gray-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-xs"
+        aria-label="Alternar modo de atualização"
+        title={usePolling ? 'Mudar para tempo real' : 'Mudar para polling'}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        {usePolling ? '⚡' : '🔄'}
+      </button>
+    </div>
+    
+    <!-- Botão de atualização manual -->
+    <div class="bg-white p-2 rounded-full shadow-lg">
+      <button 
+        on:click={manualReload}
+        class="bg-primary text-white w-10 h-10 rounded-full flex items-center justify-center"
+        aria-label="Atualizar manualmente"
+        disabled={loading}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
       </button>
