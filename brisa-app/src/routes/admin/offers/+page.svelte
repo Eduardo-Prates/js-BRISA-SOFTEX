@@ -8,6 +8,8 @@
   let description = '';
   let imageUrl = '';
   let hotspotId = '';
+  let oldPrice = '';
+  let price = '';
   let editingId = null;
   let loading = true;
   let error = '';
@@ -40,7 +42,9 @@
           title, 
           description, 
           imageUrl, 
-          hotspotId
+          hotspotId,
+          oldPrice: oldPrice ? parseFloat(oldPrice) : null,
+          price: price ? parseFloat(price) : null
         });
         
         // Atualiza a lista local
@@ -51,7 +55,9 @@
             title, 
             description, 
             imageUrl, 
-            hotspotId
+            hotspotId,
+            oldPrice: oldPrice ? parseFloat(oldPrice) : null,
+            price: price ? parseFloat(price) : null
           };
           offers = [...offers];
         }
@@ -63,7 +69,9 @@
           title,
           description,
           imageUrl,
-          hotspotId
+          hotspotId,
+          oldPrice: oldPrice ? parseFloat(oldPrice) : null,
+          price: price ? parseFloat(price) : null
         };
         
         const docRef = await addOffer(newOffer);
@@ -77,6 +85,8 @@
       description = '';
       imageUrl = '';
       hotspotId = '';
+      oldPrice = '';
+      price = '';
     } catch (err) {
       console.error('Erro ao salvar oferta:', err);
       error = 'Ocorreu um erro ao salvar a oferta. Tente novamente.';
@@ -88,6 +98,8 @@
     description = offer.description || '';
     imageUrl = offer.imageUrl || '';
     hotspotId = offer.hotspotId;
+    oldPrice = offer.oldPrice ? offer.oldPrice.toString() : '';
+    price = offer.price ? offer.price.toString() : '';
     editingId = offer.id;
   }
   
@@ -106,6 +118,24 @@
   function getHotspotName(id) {
     const hotspot = hotspots.find(h => h.id === id);
     return hotspot ? hotspot.name : 'Desconhecido';
+  }
+  
+  function formatPrice(price) {
+    if (!price) return '-';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(price);
+  }
+  
+  function resetForm() {
+    editingId = null;
+    title = '';
+    description = '';
+    imageUrl = '';
+    hotspotId = '';
+    oldPrice = '';
+    price = '';
   }
 </script>
 
@@ -145,6 +175,34 @@
         ></textarea>
       </div>
       
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label for="oldPrice" class="block text-sm font-medium text-gray-700 mb-1">Preço Antigo (R$)</label>
+          <input 
+            id="oldPrice"
+            type="number" 
+            step="0.01"
+            min="0"
+            bind:value={oldPrice} 
+            class="w-full p-2 border rounded focus:ring focus:ring-primary/50 focus:outline-none"
+            placeholder="0,00"
+          />
+        </div>
+        
+        <div>
+          <label for="price" class="block text-sm font-medium text-gray-700 mb-1">Preço Atual (R$)</label>
+          <input 
+            id="price"
+            type="number" 
+            step="0.01"
+            min="0"
+            bind:value={price} 
+            class="w-full p-2 border rounded focus:ring focus:ring-primary/50 focus:outline-none"
+            placeholder="0,00"
+          />
+        </div>
+      </div>
+      
       <div>
         <label for="imageUrl" class="block text-sm font-medium text-gray-700 mb-1">URL da Imagem</label>
         <input 
@@ -175,7 +233,7 @@
         {#if editingId !== null}
           <button 
             type="button" 
-            on:click={() => { editingId = null; title = ''; description = ''; imageUrl = ''; hotspotId = ''; }}
+            on:click={resetForm}
             class="mr-2 px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
           >
             Cancelar
@@ -217,6 +275,7 @@
             <tr>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Título</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preços</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hotspot</th>
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
             </tr>
@@ -230,6 +289,18 @@
                   {#if offer.imageUrl}
                     <div class="text-xs text-gray-500 mt-1">Tem imagem</div>
                   {/if}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm">
+                    {#if offer.oldPrice}
+                      <div class="text-gray-500 line-through text-xs">{formatPrice(offer.oldPrice)}</div>
+                    {/if}
+                    {#if offer.price}
+                      <div class="text-green-600 font-semibold">{formatPrice(offer.price)}</div>
+                    {:else}
+                      <div class="text-gray-400">-</div>
+                    {/if}
+                  </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">{getHotspotName(offer.hotspotId)}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-right">

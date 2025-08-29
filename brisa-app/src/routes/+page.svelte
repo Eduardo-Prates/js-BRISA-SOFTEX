@@ -1,7 +1,7 @@
 <script>
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { getUserByCPF } from '$lib/firebaseFetch';
+  import { getUserByCPF, updateUserLastLogin } from '$lib/firebaseFetch';
   
   let cpf = '';
   let error = '';
@@ -87,14 +87,18 @@
     loading = true;
     
     try {
-      // Verifica se o CPF é de um administrador
+      // Busca ou cria o usuário no banco de dados
       const userData = await getUserByCPF(numericCPF);
+      
+      // Atualiza o último login do usuário
+      await updateUserLastLogin(numericCPF);
       
       // Limpar qualquer localStorage antigo para evitar conflitos
       localStorage.removeItem('currentUser');
       
       // Salva os dados do usuário na sessão
       sessionStorage.setItem('currentUser', JSON.stringify({
+        id: userData.id,
         cpf: numericCPF,
         isAdmin: userData.isAdmin,
         loginTime: new Date().toISOString()
@@ -108,7 +112,7 @@
       }
     } catch (error) {
       console.error('Erro ao fazer login:', error);
-      this.error = 'Ocorreu um erro ao fazer login. Tente novamente.';
+      error = 'Ocorreu um erro ao fazer login. Tente novamente.';
     } finally {
       loading = false;
     }
@@ -123,7 +127,15 @@
 {:else}
   <div class="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
     <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-      <h1 class="text-3xl font-bold text-center mb-8 text-primary">Supermercado Ofertas</h1>
+      <div class="mb-6 items-center justify-center flex">
+        <!-- Logo - Center -->
+        <div class="flex items-center space-x-2">
+          <div class="text-2xl">
+            <span class="font-bold text-teal-600">VLC</span><span class="font-light text-gray-700">ART</span>
+          </div>
+          <img src="https://img.icons8.com/?size=100&id=13014&format=png&color=000000" alt="Carrinho de compras" class="w-6 h-6">
+        </div>
+      </div>
       
       <form on:submit|preventDefault={handleSubmit} class="space-y-6">
         <div>

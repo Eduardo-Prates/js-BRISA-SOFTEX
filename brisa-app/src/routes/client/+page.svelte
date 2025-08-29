@@ -19,6 +19,7 @@
   let loading = $state(true);
   let error = $state('');
   let carrinhoId = 'carrinho001';
+  let showingAllOffers = $state(false); // Flag para indicar se está mostrando todas as ofertas
 
   // Estado do usuário logado
   let isLoggedIn = $state(false);
@@ -174,8 +175,9 @@
 
   function updateCurrentOffers() {
     if (!carrinho || !carrinho.localizacaoAtual) {
-      currentOffers = [];
+      currentOffers = offers; // Mostrar todas as ofertas se não há localização
       currentHotspot = null;
+      showingAllOffers = true;
       return;
     }
 
@@ -183,10 +185,20 @@
 
     if (hotspot) {
       currentHotspot = hotspot;
-      currentOffers = offers.filter(offer => offer.hotspotId === hotspot.id);
+      const hotspotOffers = offers.filter(offer => offer.hotspotId === hotspot.id);
+      
+      if (hotspotOffers.length > 0) {
+        currentOffers = hotspotOffers;
+        showingAllOffers = false;
+      } else {
+        // Se não há ofertas específicas do hotspot, mostrar todas
+        currentOffers = offers;
+        showingAllOffers = true;
+      }
     } else {
       currentHotspot = null;
-      currentOffers = [];
+      currentOffers = offers; // Mostrar todas as ofertas se hotspot não encontrado
+      showingAllOffers = true;
     }
   }
 
@@ -280,9 +292,6 @@
           <img src="https://img.icons8.com/?size=100&id=13014&format=png&color=000000" alt="Carrinho de compras" class="w-6 h-6">
         </div>
 
-
-
-
         <!-- Current Section & Status - Right -->
         <div class="flex items-center space-x-4">
           <div class="text-right">
@@ -298,12 +307,6 @@
             </div>
           </div>
           
-          <!-- Status Indicator -->
-          <div class="flex flex-col items-end">
-            <span class="px-2 py-1 text-xs rounded {usePolling ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}">
-              {usePolling ? '🔄 Polling 3s' : '⚡ Tempo Real'}
-            </span>
-          </div>
         </div>
       </div>
     </div>
@@ -330,22 +333,31 @@
         <div class="col-span-12">
           {#if currentOffers.length === 0}
             <div class="bg-white p-8 rounded-lg shadow-md text-center">
-              {#if currentHotspot}
-                <p class="text-xl text-gray-500">Nenhuma oferta disponível para {currentHotspot.name} no momento.</p>
-              {:else if carrinho && carrinho.localizacaoAtual}
-                <p class="text-xl text-gray-500">Hotspot não encontrado para a localização atual: {carrinho.localizacaoAtual}</p>
-              {:else}
-                <p class="text-xl text-gray-500">Localização do carrinho não definida.</p>
-              {/if}
+              <p class="text-xl text-gray-500">Nenhuma oferta disponível no momento.</p>
             </div>
           {:else}
             <!-- Current Location Info -->
-            {#if currentHotspot}
-              <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-6">
-                <p class="font-semibold">Ofertas disponíveis em: {currentHotspot.name}</p>
-                <p class="text-sm">Total de ofertas: {currentOffers.length} | Frequência: {currentHotspot.frequency || 'Não informada'}</p>
-              </div>
-            {/if}
+            <div class="mb-6">
+              {#if showingAllOffers}
+                <div class="bg-orange-100 border border-orange-400 text-orange-700 px-4 py-3 rounded">
+                  {#if currentHotspot}
+                    <p class="font-semibold">Nenhuma oferta específica para {currentHotspot.name}</p>
+                    <p class="text-sm">Exibindo todas as ofertas disponíveis ({currentOffers.length} ofertas)</p>
+                  {:else if carrinho && carrinho.localizacaoAtual}
+                    <p class="font-semibold">Hotspot não encontrado para: {carrinho.localizacaoAtual}</p>
+                    <p class="text-sm">Exibindo todas as ofertas disponíveis ({currentOffers.length} ofertas)</p>
+                  {:else}
+                    <p class="font-semibold">Localização não definida</p>
+                    <p class="text-sm">Exibindo todas as ofertas disponíveis ({currentOffers.length} ofertas)</p>
+                  {/if}
+                </div>
+              {:else if currentHotspot}
+                <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded">
+                  <p class="font-semibold">Ofertas específicas para: {currentHotspot.name}</p>
+                  <p class="text-sm">Total de ofertas: {currentOffers.length} | Frequência: {currentHotspot.frequency || 'Não informada'}</p>
+                </div>
+              {/if}
+            </div>
 
             <!-- Products Grid -->
             <div class="grid grid-cols-2 gap-6">
@@ -373,9 +385,38 @@
                         <p class="text-sm text-gray-600 mb-3">{offer.description}</p>
                       {/if}
 
-                      <!-- Placeholder for price - you can add price fields to your offers -->
-                      <div class="space-y-1">
-                        <div class="text-xl font-bold text-teal-600"></div>
+                      <!-- Badge para indicar se é oferta específica ou geral -->
+                      {#if !showingAllOffers}
+                        <div class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                          📍 Oferta local
+                        </div>
+                      {:else}
+                        <div class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                          🌐 Oferta geral
+                        </div>
+                      {/if}
+
+                      <!-- Preços -->
+                      <div class="space-y-1 mt-2">
+                        {#if offer.price !== undefined && offer.price !== null}
+                          <div class="flex items-center justify-center space-x-2">
+                            {#if offer.oldPrice !== undefined && offer.oldPrice !== null && offer.oldPrice > offer.price}
+                              <span class="text-sm text-gray-500 line-through">R$ {offer.oldPrice.toFixed(2)}</span>
+                              <span class="text-xl font-bold text-teal-600">R$ {offer.price.toFixed(2)}</span>
+                            {:else}
+                              <span class="text-xl font-bold text-teal-600">R$ {offer.price.toFixed(2)}</span>
+                            {/if}
+                          </div>
+                          
+                          {#if offer.oldPrice !== undefined && offer.oldPrice !== null && offer.oldPrice > offer.price}
+                            <div class="text-xs text-green-600 font-medium">
+                              Economia de R$ {(offer.oldPrice - offer.price).toFixed(2)}
+                              ({(((offer.oldPrice - offer.price) / offer.oldPrice) * 100).toFixed(0)}% OFF)
+                            </div>
+                          {/if}
+                        {:else}
+                          <div class="text-lg text-gray-500">Preço não disponível</div>
+                        {/if}
                       </div>
                     </div>
                   </div>
@@ -388,32 +429,4 @@
     {/if}
   </div>
 
-  <!-- Control Buttons -->
-  <div class="fixed bottom-4 right-4 flex flex-col gap-2">
-    <!-- Toggle Update Mode -->
-    <div class="bg-white p-2 rounded-full shadow-lg">
-      <button 
-        onclick={toggleUpdateMode}
-        class="bg-gray-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-xs"
-        title={usePolling ? 'Mudar para tempo real' : 'Mudar para polling'}
-        aria-label={usePolling ? 'Mudar para tempo real' : 'Mudar para polling'}
-      >
-        {usePolling ? '⚡' : '🔄'}
-      </button>
-    </div>
-
-    <!-- Manual Reload -->
-    <div class="bg-white p-2 rounded-full shadow-lg">
-      <button 
-        onclick={manualReload}
-        class="bg-teal-600 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-teal-700"
-        disabled={loading}
-        aria-label="Recarregar dados"
-      >
-        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-      </button>
-    </div>
-  </div>
 </div>

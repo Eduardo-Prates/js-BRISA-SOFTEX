@@ -113,20 +113,88 @@ export async function deleteOffer(id) {
   return await deleteDoc(offerRef);
 }
 
-// ===== USUÁRIOS (baseado em CPF) =====
+// ===== USUÁRIOS =====
 export async function getUserByCPF(cpf) {
-  // Lista de CPFs de administradores
-  const adminCPFs = ['12345678900', '00987654321'];
-  const isAdmin = adminCPFs.includes(cpf);
-  
-  // Simula um pequeno atraso para parecer uma consulta real
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  return {
-    cpf,
-    isAdmin,
-    // Outros dados para associar ao usuário
-  };
+  try {
+    // Busca o usuário na coleção "usuarios"
+    const usuariosCol = collection(db, 'usuarios');
+    const q = query(usuariosCol, where("cpf", "==", cpf));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      // Usuário já existe no banco
+      const userData = snapshot.docs[0].data();
+      return {
+        id: snapshot.docs[0].id,
+        ...userData
+      };
+    }
+    
+    // Se o usuário não existe, vamos criar um novo
+    const adminCPFs = ['12345678900', '00987654321'];
+    const isAdmin = adminCPFs.includes(cpf);
+    
+    const newUser = {
+      cpf,
+      isAdmin,
+      createdAt: serverTimestamp(),
+      lastLogin: serverTimestamp()
+    };
+    
+    // Adiciona o novo usuário ao banco
+    const docRef = await addDoc(collection(db, 'usuarios'), newUser);
+    
+    return {
+      id: docRef.id,
+      cpf,
+      isAdmin,
+      createdAt: new Date(),
+      lastLogin: new Date()
+    };
+    
+  } catch (error) {
+    console.error('Erro ao buscar/criar usuário:', error);
+    throw error;
+  }
+}
+
+export async function updateUserLastLogin(cpf) {
+  try {
+    const usuariosCol = collection(db, 'usuarios');
+    const q = query(usuariosCol, where("cpf", "==", cpf));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      const userRef = doc(db, 'usuarios', snapshot.docs[0].id);
+      await updateDoc(userRef, {
+        lastLogin: serverTimestamp()
+      });
+    }
+  } catch (error) {
+    console.error('Erro ao atualizar último login:', error);
+  }
+}
+
+export async function getAllUsers() {
+  const usuariosCol = collection(db, 'usuarios');
+  const snapshot = await getDocs(usuariosCol);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+}
+
+export async function updateUser(id, userData) {
+  const userRef = doc(db, 'usuarios', id);
+  return await updateDoc(userRef, {
+    ...userData,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteUser(id) {
+  const userRef = doc(db, 'usuarios', id);
+  return await deleteDoc(userRef);
 }
 
 // ===== CARRINHOS =====
@@ -152,8 +220,6 @@ export async function getCarrinhoById(id) {
     ...snapshot.data()
   };
 }
-
-// Adicione estas funções no seu arquivo firebaseFetch.js
 
 // ===== LISTENERS EM TEMPO REAL =====
 export function listenToCarrinhoById(id, callback) {
